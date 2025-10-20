@@ -9,21 +9,26 @@
 #define MAX_ARGS 128
 #define MAX_COMMANDS 64
 
-const char error_message[30] = "An error has occurred\n";
 char **paths = NULL;
 int path_count = 0;
 
-void print_error();
+void print_error(const char *message);
 void init_path();
 void free_paths();
-void add_path(char *p);
-int handle_builtin(char **args);
-void parse_parallel(char *line, char **commands, int *num_commands);
-void parse_args(char *command, char **args, char **outfile);
+void add_path(char *path);
+int handle_builtin_command(char **args);
+void parse_parallel(char *input_line, char **commands, int *num_commands);
+void parse_args(char *command, char **args, char **output_file);
 void execute_external(char **args, char *outfile);
 
-void print_error() {
-    write(STDERR_FILENO, error_message, strlen(error_message));
+//Tulostaa virheviestin, mikäli tämä on annettu. Jos ei, antaa geneerisen virheviestin
+void print_error(const char *message) {
+    if (message && strlen(message)> 0){
+        dprintf(STDERR_FILENO, "Error: %s\n", message);
+    }
+    else{
+        dprintf(STDERR_FILENO, "An error has occurred\n");
+    }
 }
 void init_path() {
     paths = malloc(sizeof(char *) * 1);
@@ -31,38 +36,47 @@ void init_path() {
     path_count = 1;
 }
 
+//Vapauttaa tiedostopolun
 void free_paths() {
-    for (int i = 0; i < path_count; i++) free(paths[i]);
+    for (int i = 0; i < path_count; i++) {
+        free(paths[i]);
+    }
     free(paths);
     paths = NULL;
     path_count = 0;
 }
 
-void add_path(char *p) {
+void add_path(char *path) {
     paths = realloc(paths, sizeof(char *) * (path_count + 1));
-    paths[path_count] = strdup(p);
+    paths[path_count] = strdup(path);
     path_count++;
 }
 
-int handle_builtin(char **args) {
-    if (args[0] == NULL) return 1;
+//Ajaa komennot exit, cd, path ja palauttaa 1. Mikäli komento ei ollut "built-in"-komento, palauttaa 0
+int handle_builtin_command(char **args) {
+    if (args[0] == NULL) {
+        return 1;
+    }
 
     if (strcmp(args[0], "exit") == 0) {
         if (args[1] != NULL) {
-            print_error();
+            print_error("exit does not take arguments");
             return 1;
         }
         exit(0);
     }
 
     if (strcmp(args[0], "cd") == 0) {
-        if (args[1] == NULL || args[2] != NULL) {
-            print_error();
+        if (args[1] == NULL) {
+            print_error("cd requires one argument");
+        } else if (args[2] != NULL) {
+            print_error("cd takes only one argument");
         } else if (chdir(args[1]) != 0) {
-            print_error();
+            print_error("failed to change directory");
         }
         return 1;
     }
+    
     if (strcmp(args[0], "path") == 0) {
         free_paths();
         path_count = 0;
@@ -75,9 +89,11 @@ int handle_builtin(char **args) {
     return 0;
 }
 
-void parse_parallel(char *line, char **commands, int *num_commands) {
-    char *token = strtok(line, "&");
+//Ajaa usean komennon samanaikaisesti. Käyttää '&'-merkkiä erottamaan komennot
+void parse_parallel(char *input_line, char **commands, int *num_commands) {
+    char *token = strtok(input_line, "&");
     *num_commands = 0;
+
     while (token != NULL) {
         commands[(*num_commands)++] = token;
         token = strtok(NULL, "&");
@@ -85,8 +101,8 @@ void parse_parallel(char *line, char **commands, int *num_commands) {
     commands[*num_commands] = NULL;
 }
 
-void parse_args(char *command, char **args, char **outfile) {
-    *outfile = NULL;
+void parse_args(char *command, char **args, char **output_file) {
+    *output_file = NULL;
     char *redir = strchr(command, '>');
     if (redir != NULL) {
         *redir = '\0';
@@ -94,12 +110,12 @@ void parse_args(char *command, char **args, char **outfile) {
         while (*redir == ' ' || *redir == '\t') redir++;
         char *filename = strtok(redir, " \t\n");
         if (filename == NULL || strtok(NULL, " \t\n") != NULL) {
-            print_error();
-            *outfile = NULL;
+            print_error("Invalid redirection");
+            *output_file = NULL;
             args[0] = NULL;
             return;
         }
-        *outfile = filename;
+        *output_file = filename;
     }
 
     int i = 0;
@@ -182,7 +198,7 @@ int main(int argc, char *argv[]) {
             parse_args(commands[i], args, &outfile);
 
             if (args[0] == NULL) continue;
-            if (handle_builtin(args)) continue;
+            if (handle_builtin_command(args)) continue;
             pid_t pid = fork();
             if (pid == 0) {
                 execute_external(args, outfile);
