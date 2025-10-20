@@ -19,10 +19,16 @@ void add_path(char *path);
 int handle_builtin_command(char **args);
 void parse_parallel(char *input_line, char **commands, int *num_commands);
 void parse_args(char *command, char **args, char **output_file);
-void execute_external(char **args, char *outfile);
+void execArgsRedirect(char **args, char *output_file);
 
-void print_error() {
-    write(STDERR_FILENO, error_message, strlen(error_message));
+//Tulostaa virheviestin, mikäli tämä on annettu. Jos ei, antaa geneerisen virheviestin
+void print_error(const char *message) {
+    if (message && strlen(message)> 0){
+        dprintf(STDERR_FILENO, "Error: %s\n", message);
+    }
+    else{
+        dprintf(STDERR_FILENO, "An error has occurred\n");
+    }
 }
 void init_path() {
     paths = malloc(sizeof(char *) * 1);
@@ -145,7 +151,7 @@ void execArgsRedirect(char **parsed, char *output_file) {
             exit(1);
         }
     } else { //Parent
-        waitpid(pid, NULL, 0);
+        waitpid(p1, NULL, 0);
     }
 }
 
@@ -190,9 +196,9 @@ int main(int argc, char *argv[]) {
         pid_t pids[MAX_COMMANDS] = {0};
         for (int i = 0; i < num_commands; i++) {
             char *args[MAX_ARGS];
-            char *outfile = NULL;
+            char *output_file = NULL;
 
-            parse_args(commands[i], args, &outfile);
+            parse_args(commands[i], args, &output_file);
 
             if (!args[0]) continue;
             if (handle_builtin_command(args)) continue;
@@ -200,7 +206,7 @@ int main(int argc, char *argv[]) {
             if (pid < 0) {
                 print_error(NULL);
             } else if (pid == 0) {
-                execArgsRedirect(args, outfile);
+                execArgsRedirect(args, output_file);
                 exit(EXIT_FAILURE);
             } else {
                 pids[i] = pid;
