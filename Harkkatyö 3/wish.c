@@ -25,11 +25,6 @@ void execute_external(char **args, char *outfile);
 void print_error() {
     write(STDERR_FILENO, error_message, strlen(error_message));
 }
-void init_path() {
-    paths = malloc(sizeof(char *) * 1);
-    paths[0] = strdup("/bin");
-    path_count = 1;
-}
 
 void free_paths() {
     for (int i = 0; i < path_count; i++) free(paths[i]);
@@ -111,55 +106,58 @@ void parse_args(char *command, char **args, char **outfile) {
     args[i] = NULL;
 }
 
-void execute_external(char **args, char *outfile) {
-    if (args[0] == NULL) return;
-
-    char full_path[256];
-    for (int i = 0; i < path_count; i++) {
-        snprintf(full_path, sizeof(full_path), "%s/%s", paths[i], args[0]);
-        if (access(full_path, X_OK) == 0) {
-            pid_t pid = fork();
-            if (pid == 0) {
-                if (outfile != NULL) {
-                    int fd = open(outfile, O_CREAT | O_WRONLY | O_TRUNC, 0666);
-                    if (fd < 0) {
-                        print_error();
-                        exit(1);
-                    }
-                    dup2(fd, STDOUT_FILENO);
-                    dup2(fd, STDERR_FILENO);
-                    close(fd);
-                }
-                execv(full_path, args);
-                print_error();
-                exit(1);
-            } else if (pid > 0) {
-                waitpid(pid, NULL, 0);
-                return;
-            } else {
-                print_error();
-                return;
-            }
-        }
+void execArgsRedirect(char **parsed, char *output_file) {
+    pid_t p1 = fork(); 
+    if (p1 < 0) {
+        print_error(NULL);
+        return;
     }
-    print_error();
+    if (p1 == 0) { //Child
+        if (output_file != NULL) {
+            // Avataan kirjoittamista varten
+            int outfile_fd = open(output_file, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+            if (outfile_fd < 0) {
+                print_error(NULL);
+                exit(1);
+            }
+            // Uudelleen suuntaus
+            dup2(outfile_fd, STDOUT_FILENO);
+            dup2(outfile_fd, STDERR_FILENO);
+            close(outfile_fd);
+        }
+        if (execvp(parsed[0], parsed) < 0) {
+            print_error(NULL);
+            exit(1);
+        }
+    } else { //Parent
+        waitpid(pid, NULL, 0);
+    }
 }
 
 int main(int argc, char *argv[]) {
     FILE *input = stdin;
 
+    // Handle optional input file
     if (argc > 2) {
-        print_error();
-        exit(1);
-    } else if (argc == 2) {
+        print_error(NULL);
+        exit(EXIT_FAILURE);
+    }
+    if (argc == 2) {
         input = fopen(argv[1], "r");
-        if (input == NULL) {
-            print_error();
-            exit(1);
+        if (!input) {
+            print_error(NULL);
+            exit(EXIT_FAILURE);
         }
     }
 
-    init_path();
+    // Initialize path list
+    paths = malloc(sizeof(char *));
+    if (!paths) {
+        print_error(NULL);
+        exit(EXIT_FAILURE);
+    }
+    paths[0] = strdup("/bin");
+    path_count = 1;
     char *line = NULL;
     size_t len = 0;
     while (1) {
@@ -174,29 +172,30 @@ int main(int argc, char *argv[]) {
         int num_commands = 0;
         parse_parallel(line, commands, &num_commands);
 
-        pid_t pids[MAX_COMMANDS];
-
+        pid_t pids[MAX_COMMANDS] = {0};
         for (int i = 0; i < num_commands; i++) {
             char *args[MAX_ARGS];
             char *outfile = NULL;
+
             parse_args(commands[i], args, &outfile);
 
-            if (args[0] == NULL) continue;
+            if (!args[0]) continue;
             if (handle_builtin(args)) continue;
             pid_t pid = fork();
-            if (pid == 0) {
-                execute_external(args, outfile);
-                exit(0);
-            } else if (pid > 0) {
-                pids[i] = pid;
+            if (pid < 0) {
+                print_error(NULL);
+            } else if (pid == 0) {
+                execArgsRedirect(args, outfile);
+                exit(EXIT_FAILURE);
             } else {
-                print_error();
+                pids[i] = pid;
             }
         }
         for (int i = 0; i < num_commands; i++) {
             if (pids[i] > 0) waitpid(pids[i], NULL, 0);
         }
     }
+
     free(line);
     free_paths();
     return 0;
