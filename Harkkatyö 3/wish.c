@@ -138,7 +138,7 @@ void execArgsRedirect(char **parsed, char *output_file) {
             // Avataan kirjoittamista varten
             int outfile_fd = open(output_file, O_CREAT | O_WRONLY | O_TRUNC, 0666);
             if (outfile_fd < 0) {
-                print_error(NULL);
+                print_error("Cannot open file.");
                 exit(1);
             }
             // Uudelleen suuntaus
@@ -147,7 +147,7 @@ void execArgsRedirect(char **parsed, char *output_file) {
             close(outfile_fd);
         }
         if (execvp(parsed[0], parsed) < 0) {
-            print_error(NULL);
+            print_error("Cannot execute command.");
             exit(1);
         }
     } else { //Parent
@@ -159,20 +159,20 @@ int main(int argc, char *argv[]) {
     FILE *input = stdin;
     //Katsotaan onko syötetiedostoa
     if (argc > 2) {
-        print_error(NULL);
+        print_error("Too many args");
         exit(1);
     }
     if (argc == 2) {
         input = fopen(argv[1], "r");
         if (!input) {
-            print_error(NULL);
+            print_error("Cannot open file");
             exit(1);
         }
     }
     // Alustetaan path
     paths = malloc(sizeof(char *));
     if (!paths) {
-        print_error(NULL);
+        print_error("Cannnot allocate memory");
         exit(1);
     }
     paths[0] = strdup("/bin");
