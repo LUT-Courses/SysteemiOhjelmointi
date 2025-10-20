@@ -157,25 +157,23 @@ void execArgsRedirect(char **parsed, char *output_file) {
 
 int main(int argc, char *argv[]) {
     FILE *input = stdin;
-
-    // Handle optional input file
+    //Katsotaan onko syötetiedostoa
     if (argc > 2) {
         print_error(NULL);
-        exit(EXIT_FAILURE);
+        exit(1);
     }
     if (argc == 2) {
         input = fopen(argv[1], "r");
         if (!input) {
             print_error(NULL);
-            exit(EXIT_FAILURE);
+            exit(1);
         }
     }
-
-    // Initialize path list
+    // Alustetaan path
     paths = malloc(sizeof(char *));
     if (!paths) {
         print_error(NULL);
-        exit(EXIT_FAILURE);
+        exit(1);
     }
     paths[0] = strdup("/bin");
     path_count = 1;
@@ -200,14 +198,18 @@ int main(int argc, char *argv[]) {
 
             parse_args(commands[i], args, &output_file);
 
-            if (!args[0]) continue;
-            if (handle_builtin_command(args)) continue;
+            if (!args[0]) {
+                continue;
+            }
+            if (handle_builtin_command(args)) {
+                continue;
+            }
             pid_t pid = fork();
             if (pid < 0) {
                 print_error(NULL);
             } else if (pid == 0) {
                 execArgsRedirect(args, output_file);
-                exit(EXIT_FAILURE);
+                exit(1);
             } else {
                 pids[i] = pid;
             }
@@ -216,7 +218,6 @@ int main(int argc, char *argv[]) {
             if (pids[i] > 0) waitpid(pids[i], NULL, 0);
         }
     }
-
     free(line);
     free_paths();
     return 0;
